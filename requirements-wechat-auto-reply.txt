@@ -1,0 +1,4 @@
+pywin32==311
+pywinauto==0.6.9
+pillow==12.2.0
+rapidocr-onnxruntime==1.2.3
