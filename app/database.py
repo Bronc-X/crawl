@@ -65,6 +65,16 @@ def init_db(db_path: str) -> None:
                 default_attributes_json TEXT NOT NULL,
                 updated_at TEXT NOT NULL
             );
+
+            CREATE TABLE IF NOT EXISTS real_send_jobs (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                channel TEXT NOT NULL,
+                action TEXT NOT NULL,
+                status TEXT NOT NULL,
+                external_id TEXT NOT NULL,
+                payload_json TEXT NOT NULL,
+                created_at TEXT NOT NULL
+            );
             """
         )
 

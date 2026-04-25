@@ -18,6 +18,8 @@ from .schemas import (
     PublishAction,
     PublishTask,
     PublishTaskStatus,
+    RealSendBridgeRequest,
+    RealSendJob,
 )
 
 
@@ -102,6 +104,17 @@ class ListingRepository:
             default_currency=row["default_currency"],
             default_attributes=json.loads(row["default_attributes_json"]),
             updated_at=row["updated_at"],
+        )
+
+    def _row_to_real_send_job(self, row: Any) -> RealSendJob:
+        return RealSendJob(
+            id=row["id"],
+            channel=row["channel"],
+            action=row["action"],
+            status=row["status"],
+            external_id=row["external_id"],
+            payload=json.loads(row["payload_json"]),
+            created_at=row["created_at"],
         )
 
     def create_product(self, payload: ProductCreate) -> Product:
@@ -411,3 +424,47 @@ class ListingRepository:
                     ),
                 )
         return self.get_channel_listing(product_id, channel)
+
+    def save_real_send_job(
+        self, payload: RealSendBridgeRequest, status: str = "awaiting_human_confirm"
+    ) -> RealSendJob:
+        timestamp = now_iso()
+        with connect(self.db_path) as conn:
+            cursor = conn.execute(
+                """
+                INSERT INTO real_send_jobs (
+                    channel, action, status, external_id, payload_json, created_at
+                ) VALUES (?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    payload.channel.value,
+                    payload.action.value,
+                    status,
+                    "",
+                    json.dumps(payload.payload),
+                    timestamp,
+                ),
+            )
+            job_id = int(cursor.lastrowid)
+            external_id = f"local-real-send-{payload.channel.value}-{job_id}"
+            conn.execute(
+                "UPDATE real_send_jobs SET external_id = ? WHERE id = ?",
+                (external_id, job_id),
+            )
+        return self.get_real_send_job(job_id)
+
+    def get_real_send_job(self, job_id: int) -> RealSendJob:
+        with connect(self.db_path) as conn:
+            row = conn.execute(
+                "SELECT * FROM real_send_jobs WHERE id = ?", (job_id,)
+            ).fetchone()
+        if row is None:
+            raise KeyError(f"Real-send job {job_id} not found")
+        return self._row_to_real_send_job(row)
+
+    def list_real_send_jobs(self) -> list[RealSendJob]:
+        with connect(self.db_path) as conn:
+            rows = conn.execute(
+                "SELECT * FROM real_send_jobs ORDER BY created_at DESC, id DESC"
+            ).fetchall()
+        return [self._row_to_real_send_job(row) for row in rows]

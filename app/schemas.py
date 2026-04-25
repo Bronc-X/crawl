@@ -305,3 +305,19 @@ class AdapterInfo(BaseModel):
     required_env_vars: list[str] = Field(default_factory=list)
     missing_env_vars: list[str] = Field(default_factory=list)
     notes: list[str] = Field(default_factory=list)
+
+
+class RealSendBridgeRequest(BaseModel):
+    channel: Channel
+    action: PublishAction
+    payload: dict[str, Any]
+
+
+class RealSendJob(BaseModel):
+    id: int
+    channel: Channel
+    action: PublishAction
+    status: str
+    external_id: str
+    payload: dict[str, Any]
+    created_at: str

@@ -24,6 +24,8 @@ from .schemas import (
     PublishTask,
     QuickCreateRequest,
     QuickCreateResponse,
+    RealSendBridgeRequest,
+    RealSendJob,
     ValidateRequest,
     ValidationResult,
     XiaohongshuScrapeRequest,
@@ -206,6 +208,21 @@ def create_app(db_path: str | None = None) -> FastAPI:
             return _repo(request).get_publish_task(task_id)
         except KeyError as exc:
             raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+    @app.post("/real-send/{channel}", response_model=RealSendJob, status_code=202)
+    def accept_real_send_job(
+        channel: Channel, payload: RealSendBridgeRequest, request: Request
+    ) -> RealSendJob:
+        if payload.channel != channel:
+            raise HTTPException(
+                status_code=422,
+                detail="Bridge channel path does not match payload channel.",
+            )
+        return _repo(request).save_real_send_job(payload)
+
+    @app.get("/real-send-jobs", response_model=list[RealSendJob])
+    def list_real_send_jobs(request: Request) -> list[RealSendJob]:
+        return _repo(request).list_real_send_jobs()
 
     return app
 

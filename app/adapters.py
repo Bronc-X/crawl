@@ -267,7 +267,7 @@ class RealSendChannelAdapter(BaseChannelAdapter):
     def _post_to_bridge(
         self, outbound: dict, headers: dict[str, str]
     ) -> httpx.Response:
-        with httpx.Client(timeout=10.0) as client:
+        with httpx.Client(timeout=10.0, trust_env=False) as client:
             return client.post(self.endpoint_url, json=outbound, headers=headers)
 
     def execute(self, action: PublishAction, payload: dict) -> AdapterResult:

@@ -455,7 +455,7 @@ def test_xiaohongshu_rewrite_uses_local_fallback_without_llm_config(
 def test_xiaohongshu_rewrite_posts_to_configured_llm_bridge(
     tmp_path, monkeypatch
 ) -> None:
-    monkeypatch.setenv("LISTING_LLM_API_URL", "https://llm.example/rewrite")
+    monkeypatch.setenv("LISTING_LLM_API_URL", "https://llm.example/v1")
     monkeypatch.setenv("LISTING_LLM_API_KEY", "secret-llm-token")
     monkeypatch.setenv("LISTING_LLM_MODEL", "rewrite-model")
     calls = []
@@ -518,7 +518,7 @@ def test_xiaohongshu_rewrite_posts_to_configured_llm_bridge(
     assert payload["title"] == "LLM Rewritten Title"
     assert payload["description"] == "This is a richer rewritten description for listing validation."
     assert payload["topics"] == ["training", "listing"]
-    assert calls[0]["url"] == "https://llm.example/rewrite"
+    assert calls[0]["url"] == "https://llm.example/v1/chat/completions"
     assert calls[0]["headers"]["Authorization"] == "Bearer secret-llm-token"
     assert calls[0]["outbound"]["model"] == "rewrite-model"
     assert "messages" in calls[0]["outbound"]
@@ -836,3 +836,33 @@ def test_real_send_adapter_posts_payload_to_configured_endpoint(
             },
         }
     ]
+
+
+def test_local_real_send_bridge_accepts_and_lists_xiaohongshu_jobs(tmp_path) -> None:
+    app = create_app(str(tmp_path / "test.db"))
+    client = TestClient(app)
+
+    response = client.post(
+        "/real-send/xiaohongshu",
+        json={
+            "channel": "xiaohongshu",
+            "action": "publish",
+            "payload": {
+                "title": "Bridge Accepted Product",
+                "description": "Ready for a human-confirmed real-send bridge handoff.",
+                "price": 129.0,
+            },
+        },
+    )
+    jobs_response = client.get("/real-send-jobs")
+
+    job = response.json()
+    jobs = jobs_response.json()
+
+    assert response.status_code == 202
+    assert job["channel"] == "xiaohongshu"
+    assert job["action"] == "publish"
+    assert job["status"] == "awaiting_human_confirm"
+    assert job["external_id"].startswith("local-real-send-xiaohongshu-")
+    assert jobs_response.status_code == 200
+    assert jobs[0]["external_id"] == job["external_id"]
