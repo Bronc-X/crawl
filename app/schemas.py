@@ -281,6 +281,16 @@ class XiaohongshuScrapeResponse(BaseModel):
     warnings: list[str] = Field(default_factory=list)
 
 
+class XiaohongshuBrowserExtractRequest(BaseModel):
+    source_url: str
+    final_url: str
+    html: str
+    account_type: XiaohongshuAccountType = XiaohongshuAccountType.merchant
+    price: float | None = Field(default=None, gt=0)
+    category: str | None = None
+    currency: str | None = None
+
+
 class XiaohongshuRewriteRequest(BaseModel):
     draft: XiaohongshuScrapeDraft
     account_type: XiaohongshuAccountType = XiaohongshuAccountType.merchant

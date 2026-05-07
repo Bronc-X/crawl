@@ -1,10 +1,12 @@
 from __future__ import annotations
 
 import json
+import sqlite3
+import uuid
 from datetime import UTC, datetime
 from typing import Any
 
-from .database import connect, init_db
+from .database import connect, init_db, uses_shared_in_memory
 from .schemas import (
     Channel,
     ChannelListing,
@@ -29,8 +31,14 @@ def now_iso() -> str:
 
 class ListingRepository:
     def __init__(self, db_path: str) -> None:
+        if db_path == ":memory:":
+            db_path = f"file:listing-memory-{uuid.uuid4().hex}?mode=memory&cache=shared"
         self.db_path = db_path
-        init_db(db_path)
+        self._keepalive_conn: sqlite3.Connection | None = None
+        init_db(self.db_path)
+        if uses_shared_in_memory(self.db_path):
+            # Keep one shared in-memory connection open for the repository lifetime.
+            self._keepalive_conn = connect(self.db_path)
 
     def _serialize_media(self, media: list[Any]) -> str:
         payload: list[Any] = []

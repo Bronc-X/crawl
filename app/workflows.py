@@ -26,6 +26,27 @@ class ProductWorkflowService:
         self.repo = repo
         self.publisher = publisher
 
+    def _collect_scalar_default_conflicts(
+        self, settings: dict[Channel, ChannelSetting], field_name: str
+    ) -> list[str]:
+        attr_name = f"default_{field_name}"
+        selected_values = [
+            (channel, getattr(setting, attr_name))
+            for channel, setting in settings.items()
+            if getattr(setting, attr_name)
+        ]
+        if len(selected_values) < 2:
+            return []
+
+        source_channel, source_value = selected_values[0]
+        conflicts: list[str] = []
+        for channel, value in selected_values[1:]:
+            if value != source_value:
+                conflicts.append(
+                    f"{field_name} ({source_channel.value}={source_value!r}, {channel.value}={value!r})"
+                )
+        return conflicts
+
     def _merge_saved_defaults(
         self, settings: dict[Channel, ChannelSetting]
     ) -> dict[str, Any]:
@@ -46,10 +67,13 @@ class ProductWorkflowService:
                         f"{channel.value}={value!r})"
                     )
 
+        conflicts.extend(self._collect_scalar_default_conflicts(settings, "category"))
+        conflicts.extend(self._collect_scalar_default_conflicts(settings, "currency"))
+
         if conflicts:
             raise DefaultAttributeConflictError(
-                "平台默认配置存在冲突，请先统一这些字段后再自动上架："
-                + "；".join(conflicts)
+                "\u5e73\u53f0\u9ed8\u8ba4\u914d\u7f6e\u5b58\u5728\u51b2\u7a81\uff0c\u8bf7\u5148\u7edf\u4e00\u8fd9\u4e9b\u5b57\u6bb5\u540e\u518d\u81ea\u52a8\u4e0a\u67b6\uff1a"
+                + "\uff1b".join(conflicts)
             )
 
         return merged_attributes
@@ -60,17 +84,18 @@ class ProductWorkflowService:
         }
 
         merged_attributes: dict[str, Any] = {}
+        inferred_category = payload.category or "general"
+        inferred_currency = payload.currency or "CNY"
         if payload.use_saved_defaults:
             merged_attributes = self._merge_saved_defaults(settings)
-
-        inferred_category = payload.category or next(
-            (setting.default_category for setting in settings.values() if setting.default_category),
-            "general",
-        )
-        inferred_currency = payload.currency or next(
-            (setting.default_currency for setting in settings.values() if setting.default_currency),
-            "CNY",
-        )
+            inferred_category = payload.category or next(
+                (setting.default_category for setting in settings.values() if setting.default_category),
+                "general",
+            )
+            inferred_currency = payload.currency or next(
+                (setting.default_currency for setting in settings.values() if setting.default_currency),
+                "CNY",
+            )
 
         product = self.repo.create_product(
             ProductCreate(
@@ -110,18 +135,19 @@ class ProductWorkflowService:
             channel: self.repo.get_channel_setting(channel) for channel in payload.channels
         }
         merged_attributes: dict[str, Any] = {}
+        inferred_category = payload.category or draft.category
+        inferred_currency = payload.currency or draft.currency
         if payload.use_saved_defaults:
             merged_attributes = self._merge_saved_defaults(settings)
+            inferred_category = payload.category or next(
+                (setting.default_category for setting in settings.values() if setting.default_category),
+                draft.category,
+            )
+            inferred_currency = payload.currency or next(
+                (setting.default_currency for setting in settings.values() if setting.default_currency),
+                draft.currency,
+            )
         merged_attributes.update(draft.attributes)
-
-        inferred_category = payload.category or next(
-            (setting.default_category for setting in settings.values() if setting.default_category),
-            draft.category,
-        )
-        inferred_currency = payload.currency or next(
-            (setting.default_currency for setting in settings.values() if setting.default_currency),
-            draft.currency,
-        )
 
         product = self.repo.create_product(
             ProductCreate(

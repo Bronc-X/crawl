@@ -4,11 +4,29 @@ import sqlite3
 from pathlib import Path
 
 
-def init_db(db_path: str) -> None:
-    path = Path(db_path)
-    path.parent.mkdir(parents=True, exist_ok=True)
+def _is_shared_memory_uri(db_path: str) -> bool:
+    return db_path.startswith("file:") and "mode=memory" in db_path
 
-    with sqlite3.connect(path) as conn:
+
+def _resolve_sqlite_target(db_path: str) -> tuple[str, bool]:
+    if db_path == ":memory:":
+        return "file:listing-shared-memory?mode=memory&cache=shared", True
+    if _is_shared_memory_uri(db_path):
+        return db_path, True
+    return db_path, False
+
+
+def uses_shared_in_memory(db_path: str) -> bool:
+    return db_path == ":memory:" or _is_shared_memory_uri(db_path)
+
+
+def init_db(db_path: str) -> None:
+    target, use_uri = _resolve_sqlite_target(db_path)
+    if not use_uri:
+        path = Path(target)
+        path.parent.mkdir(parents=True, exist_ok=True)
+
+    with sqlite3.connect(target, uri=use_uri) as conn:
         conn.executescript(
             """
             CREATE TABLE IF NOT EXISTS products (
@@ -80,6 +98,7 @@ def init_db(db_path: str) -> None:
 
 
 def connect(db_path: str) -> sqlite3.Connection:
-    conn = sqlite3.connect(db_path)
+    target, use_uri = _resolve_sqlite_target(db_path)
+    conn = sqlite3.connect(target, uri=use_uri)
     conn.row_factory = sqlite3.Row
     return conn

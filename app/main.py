@@ -28,7 +28,9 @@ from .schemas import (
     RealSendJob,
     ValidateRequest,
     ValidationResult,
+    XiaohongshuBrowserExtractRequest,
     XiaohongshuScrapeRequest,
+    XiaohongshuScrapeDraft,
     XiaohongshuScrapeResponse,
     XiaohongshuRewriteRequest,
     XiaohongshuRewriteResponse,
@@ -36,6 +38,10 @@ from .schemas import (
 from .validation import CHANNEL_RULES, validate_product
 from .workflows import DefaultAttributeConflictError, ProductWorkflowService
 from .xiaohongshu import XiaohongshuScrapeError, XiaohongshuScraper
+from .xiaohongshu_browser import (
+    XiaohongshuBrowserBlockerError,
+    extract_browser_note_payload,
+)
 
 
 def _repo(request: Request) -> ListingRepository:
@@ -44,9 +50,9 @@ def _repo(request: Request) -> ListingRepository:
 
 def create_app(db_path: str | None = None) -> FastAPI:
     app = FastAPI(
-        title="多平台稳定上架 API",
+        title="\u591a\u5e73\u53f0\u7a33\u5b9a\u4e0a\u67b6 API",
         version="0.3.0",
-        description="商品主数据、平台默认配置、校验、自动上架任务和中文操作台。",
+        description="\u5546\u54c1\u4e3b\u6570\u636e\u3001\u5e73\u53f0\u9ed8\u8ba4\u914d\u7f6e\u3001\u6821\u9a8c\u3001\u81ea\u52a8\u4e0a\u67b6\u4efb\u52a1\u548c\u4e2d\u6587\u64cd\u4f5c\u53f0\u3002",
     )
     app.state.repo = ListingRepository(
         db_path or os.getenv("LISTING_DB_PATH", "data/listing.db")
@@ -137,6 +143,60 @@ def create_app(db_path: str | None = None) -> FastAPI:
     ) -> XiaohongshuRewriteResponse:
         rewriter: XiaohongshuRewriteService = request.app.state.xiaohongshu_rewriter
         return rewriter.rewrite(payload)
+
+    @app.post("/xiaohongshu/browser/extract", response_model=XiaohongshuScrapeResponse)
+    def extract_xiaohongshu_browser(payload: XiaohongshuBrowserExtractRequest) -> XiaohongshuScrapeResponse:
+        try:
+            browser_payload = extract_browser_note_payload(
+                source_url=payload.source_url,
+                final_url=payload.final_url,
+                html=payload.html,
+            )
+        except XiaohongshuBrowserBlockerError as exc:
+            raise HTTPException(
+                status_code=423,
+                detail={
+                    "reason": exc.reason,
+                    "message": str(exc),
+                    "requires_human_intervention": True,
+                },
+            ) from exc
+        except ValueError as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+        attributes = {
+            "source_platform": "xiaohongshu",
+            "source_method": "browser_worker",
+            "source_url": browser_payload.source_url,
+            "source_final_url": browser_payload.final_url,
+            "xiaohongshu_account_type": payload.account_type.value,
+            "publish_surface": (
+                "note"
+                if payload.account_type.value == "personal"
+                else "merchant_listing"
+            ),
+        }
+        if browser_payload.note_id:
+            attributes["source_note_id"] = browser_payload.note_id
+        if browser_payload.author_name:
+            attributes["source_author_name"] = browser_payload.author_name
+        if browser_payload.author_profile_url:
+            attributes["source_author_profile_url"] = browser_payload.author_profile_url
+        if browser_payload.tags:
+            attributes["source_tags"] = browser_payload.tags
+
+        return XiaohongshuScrapeResponse(
+            draft=XiaohongshuScrapeDraft(
+                source_url=browser_payload.source_url,
+                title=browser_payload.title,
+                description=browser_payload.description,
+                category=payload.category or "xiaohongshu_browser_import",
+                price=payload.price,
+                currency=payload.currency or "CNY",
+                attributes=attributes,
+                media=browser_payload.media,
+            )
+        )
 
     @app.get("/products", response_model=list[Product])
     def list_products(request: Request) -> list[Product]:
